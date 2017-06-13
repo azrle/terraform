@@ -151,6 +151,16 @@ func formatPlanModuleExpand(
 		for _, attrK := range keys {
 			attrDiff := rdiff.Attributes[attrK]
 
+			if attrDiff.HumanReadableDiff != nil {
+				buf.WriteString(fmt.Sprintf(
+					"  %s:%s %s\n",
+					attrK,
+					strings.Repeat(" ", keyLen-len(attrK)),
+					*attrDiff.HumanReadableDiff,
+				))
+				continue
+			}
+
 			v := attrDiff.New
 			if v == "" && attrDiff.NewComputed {
 				v = "<computed>"

@@ -64,6 +64,10 @@ type Schema struct {
 	// equivalent regardless of trailing whitespace.
 	DiffSuppressFunc SchemaDiffSuppressFunc
 
+	// If this is non-nil, the provided function will be used after diff has
+	// been generated and format it into human-readable format.
+	DiffHumanReadableFunc SchemaDiffHumanReadableFunc
+
 	// If this is non-nil, then this will be a default value that is used
 	// when this item is not set in the configuration.
 	//
@@ -197,6 +201,9 @@ type Schema struct {
 //
 // Return true if the diff should be suppressed, false to retain it.
 type SchemaDiffSuppressFunc func(k, old, new string, d *ResourceData) bool
+
+// SchemaDiffHumanReadableFunc is a function which can make diff human-readable.
+type SchemaDiffHumanReadableFunc func(old, new *string) *string
 
 // SchemaDefaultFunc is a function called to return a default value for
 // a field.
@@ -345,6 +352,10 @@ func (s *Schema) finalizeDiff(
 	if s.Sensitive {
 		// Set the Sensitive flag so output is hidden in the UI
 		d.Sensitive = true
+	}
+
+	if s.DiffHumanReadableFunc != nil {
+		d.HumanReadableDiff = s.DiffHumanReadableFunc(&d.Old, &d.New)
 	}
 
 	return d
