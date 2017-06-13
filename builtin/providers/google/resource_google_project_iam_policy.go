@@ -24,9 +24,10 @@ func resourceGoogleProjectIamPolicy() *schema.Resource {
 				ForceNew: true,
 			},
 			"policy_data": &schema.Schema{
-				Type:             schema.TypeString,
-				Required:         true,
-				DiffSuppressFunc: jsonPolicyDiffSuppress,
+				Type:                  schema.TypeString,
+				Required:              true,
+				DiffSuppressFunc:      jsonPolicyDiffSuppress,
+				DiffHumanReadableFunc: jsonPolicyDiffHumanReadable,
 			},
 			"authoritative": &schema.Schema{
 				Type:     schema.TypeBool,
@@ -361,6 +362,67 @@ func mergeBindings(bindings []*cloudresourcemanager.Binding) []*cloudresourceman
 	}
 
 	return rb
+}
+
+func jsonPolicyDiffHumanReadable(old, new *string) *string {
+	var oldPolicy, newPolicy cloudresourcemanager.Policy
+	if err := json.Unmarshal([]byte(*old), &oldPolicy); err != nil {
+		log.Printf("[ERROR] Could not unmarshal old policy %s: %v", *old, err)
+		return nil
+	}
+	if err := json.Unmarshal([]byte(*new), &newPolicy); err != nil {
+		log.Printf("[ERROR] Could not unmarshal new policy %s: %v", *new, err)
+		return nil
+	}
+	membersDiff := make(map[string]*struct{ old, new []string })
+	oldPolicy.Bindings = mergeBindings(oldPolicy.Bindings)
+	newPolicy.Bindings = mergeBindings(newPolicy.Bindings)
+	for _, binding := range oldPolicy.Bindings {
+		membersDiff[binding.Role] = &struct{ old, new []string }{old: binding.Members}
+		sort.Strings(membersDiff[binding.Role].old)
+	}
+	for _, binding := range newPolicy.Bindings {
+		if membersDiff[binding.Role] == nil {
+			membersDiff[binding.Role] = &struct{ old, new []string }{new: binding.Members}
+		} else {
+			membersDiff[binding.Role].new = binding.Members
+		}
+		sort.Strings(membersDiff[binding.Role].new)
+	}
+
+	var result string
+	for role, diff := range membersDiff {
+		var addMembers, delMembers []string
+		hasMember := make(map[string]byte)
+		for _, m := range diff.old {
+			hasMember[m] = 1
+		}
+		for _, m := range diff.new {
+			if hasMember[m] == 0 {
+				addMembers = append(addMembers, m)
+				continue
+			}
+			hasMember[m] = 2 // no diff
+		}
+		for _, m := range diff.old {
+			if hasMember[m] == 1 {
+				delMembers = append(delMembers, m)
+			}
+		}
+		if len(addMembers) == 0 && len(delMembers) == 0 {
+			continue
+		}
+		result += fmt.Sprintf("\n  Role: %s", role)
+		for _, m := range delMembers {
+			result += fmt.Sprintf("\n    remove %s", m)
+		}
+		for _, m := range addMembers {
+			result += fmt.Sprintf("\n    add    %s", m)
+		}
+	}
+
+	log.Printf("Exit jsonPolicyDiffHumanReadable: %s", result)
+	return &result
 }
 
 func jsonPolicyDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
